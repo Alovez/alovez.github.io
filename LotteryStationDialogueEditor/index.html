@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Document</title>
+
+    <link rel="stylesheet" href="syrup-dark.css" />
+    <style>
+        html,
+        body {
+            margin: 0;
+        }
+
+        #editor {
+            width: 100vw;
+            height: 100vh;
+        }
+    </style>
+</head>
+
+<body>
+    <!-- <input id="file" type="file" /> -->
+    <!-- <p>Select a file with the following format.</p> -->
+    <div id="editor"></div>
+
+    <script src="./bundle.js"></script>
+    <script>
+        let currentFile = null;
+
+        const viewModel = BaklavaJS.createBaklava(document.getElementById("editor"));
+        const TestNode = BaklavaJS.Core.defineNode({
+            type: "Dialogue",
+            inputs: {
+                a: () => new BaklavaJS.RendererVue.TextInputInterface("Hello", "world"),
+            },
+            outputs: {
+                b: () => new BaklavaJS.RendererVue.TextInputInterface("Hello", "world"),
+            },
+        });
+        viewModel.editor.registerNodeType(TestNode);
+
+        const RoleNode = BaklavaJS.Core.defineNode({
+            type: "Role",
+            inputs: {
+                id: () => new BaklavaJS.RendererVue.IntegerInterface("id", 0).setPort(false),
+                name: () => new BaklavaJS.RendererVue.TextInputInterface("name", "名称").setPort(false),
+                gender: () => new BaklavaJS.RendererVue.SelectInterface("gender", "性别", ["男", "女", "未知"]).setPort(false),
+                money: () => new BaklavaJS.RendererVue.NumberInterface("money", 0).setPort(false),
+                perfer_price: () => new BaklavaJS.RendererVue.IntegerInterface("perfer_price", 0).setPort(false),
+                texture: () => new BaklavaJS.RendererVue.TextInputInterface("texture", "图片").setPort(false),
+                other_name: () => new BaklavaJS.RendererVue.TextInputInterface("other_name", "双人名字").setPort(false),
+                special_type: () => new BaklavaJS.RendererVue.TextInputInterface("special_type", "特殊类型").setPort(false),
+            },
+            outputs: {
+                next: () => new BaklavaJS.RendererVue.TextInputInterface("Next", ""),
+            },
+        });
+
+        viewModel.editor.registerNodeType(RoleNode);
+
+        const CommonDialogueNode = BaklavaJS.Core.defineNode({
+            type: "CommonDialogue",
+            inputs: {
+                pre: () => new BaklavaJS.Core.NodeInterface("前置"),
+                action: () => new BaklavaJS.RendererVue.SelectInterface("action", "名称", ["BUYER", "ME", "BUY", "PAY", "DEPOSIT", "REFUSETOPLAY", "BUYERVICE", "FAKELEAVE"]).setPort(false),
+                content: () => new BaklavaJS.RendererVue.TextInputInterface("content", "内容").setPort(false),
+            },
+            outputs: {
+                next: () => new BaklavaJS.RendererVue.TextInputInterface("Next", ""),
+            },
+        });
+
+        viewModel.editor.registerNodeType(CommonDialogueNode);
+
+        //register hotkeys
+        viewModel.commandHandler.registerHotkey(["Control", "Backspace"], "DELETE_NODES");
+
+        viewModel.commandHandler.registerCommand("OPEN_FILE", {
+            canExecute: () => true,
+            execute: (id) => {
+                importData();
+                viewModel.commandHandler.pressedKeys = [];
+            },
+        });
+
+        const OptionDialogueNode = BaklavaJS.Core.defineNode({
+            type: "OptionDialogue",
+            inputs: {
+                pre: () => new BaklavaJS.Core.NodeInterface("前置"),
+                content: () => new BaklavaJS.RendererVue.TextInputInterface("content", "内容").setPort(false),
+            },
+            outputs: {
+                Confirm: () => new BaklavaJS.Core.NodeInterface("Comfirm"),
+                Refuse: () => new BaklavaJS.Core.NodeInterface("Refuse"),
+            },
+        });
+
+        viewModel.editor.registerNodeType(OptionDialogueNode);
+
+        viewModel.commandHandler.registerHotkey(["Control", "o"], "OPEN_FILE");
+
+        function addNodeWithCoordinates(nodeType, x, y) {
+            const n = new nodeType();
+            viewModel.displayedGraph.addNode(n);
+            n.position.x = x;
+            n.position.y = y;
+            return n;
+        }
+
+
+
+        function onReaderLoad(event) {
+            console.log(event.target.result);
+            var obj = JSON.parse(event.target.result);
+            console.log(obj);
+            currentFile = obj;
+            let x = 0;
+            for (const key of Object.keys(currentFile)) {
+                console.log(currentFile[key].name);
+                let node = addNodeWithCoordinates(RoleNode, x, 0);
+                node.title = currentFile[key].name;
+                node.inputs.id.value = Number(parseInt(key));
+                node.inputs.name.value = currentFile[key].name;
+                node.inputs.gender.value = currentFile[key].gender == 1 ? "男" : "女";
+                node.inputs.money.value = currentFile[key].money;
+                node.inputs.perfer_price.value = currentFile[key].perfer_price;
+                node.inputs.texture.value = currentFile[key].texture;
+                node.inputs.other_name.value = currentFile[key].other_name;
+                node.inputs.special_type.value = currentFile[key].special_type;
+                x += 100;
+            }
+        }
+
+        function importData() {
+            let input = document.createElement('input');
+            input.type = 'file';
+            input.onchange = _ => {
+                // you can use this method to get file and perform respective operations
+                let file = input.files[0];
+                console.log(file);
+                var reader = new FileReader();
+                reader.onload = onReaderLoad;
+                reader.readAsText(file);
+            };
+            input.click();
+
+        }
+    </script>
+
+    <!-- <script>
+            (function(){
+    
+                function onChange(event) {
+                    var reader = new FileReader();
+                    reader.onload = onReaderLoad;
+                    reader.readAsText(event.target.files[0]);
+                }
+            
+                function onReaderLoad(event){
+                    console.log(event.target.result);
+                    var obj = JSON.parse(event.target.result);
+                    alert_data(obj);
+                }
+             
+                document.getElementById('file').addEventListener('change', onChange);
+            
+            }());
+        </script> -->
+</body>
+
+</html>
