@@ -122,15 +122,15 @@
                 console.log(currentFile[key].name);
                 let node = addNodeWithCoordinates(RoleNode, x, 0);
                 node.title = currentFile[key].name;
-                node.inputs.id.value = Number(parseInt(key));
+                node.inputs.id.value = parseInt(key);
                 node.inputs.name.value = currentFile[key].name;
                 node.inputs.gender.value = currentFile[key].gender == 1 ? "男" : "女";
-                node.inputs.money.value = currentFile[key].money;
-                node.inputs.perfer_price.value = currentFile[key].perfer_price;
+                node.inputs.money.value = Number(currentFile[key].money);
+                node.inputs.perfer_price.value = currentFile[key].prefer_price;
                 node.inputs.texture.value = currentFile[key].texture;
                 node.inputs.other_name.value = currentFile[key].other_name;
                 node.inputs.special_type.value = currentFile[key].special_type;
-                x += 100;
+                x += 250;
             }
         }
 
