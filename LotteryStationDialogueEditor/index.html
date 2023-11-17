@@ -28,19 +28,21 @@
 
     <script src="./bundle.js"></script>
     <script>
+
+        document.onkeydown = function(event){
+            if (event.ctrlKey && window.event.keyCode==83){	//禁用ctrl + s 功能
+                return false;
+            }
+            if (event.ctrlKey && window.event.keyCode==79){	//禁用ctrl + s 功能
+                return false;
+            }
+            console.log(event);
+        }
+
+
         let currentFile = null;
 
         const viewModel = BaklavaJS.createBaklava(document.getElementById("editor"));
-        const TestNode = BaklavaJS.Core.defineNode({
-            type: "Dialogue",
-            inputs: {
-                a: () => new BaklavaJS.RendererVue.TextInputInterface("Hello", "world"),
-            },
-            outputs: {
-                b: () => new BaklavaJS.RendererVue.TextInputInterface("Hello", "world"),
-            },
-        });
-        viewModel.editor.registerNodeType(TestNode);
 
         const RoleNode = BaklavaJS.Core.defineNode({
             type: "Role",
@@ -75,17 +77,7 @@
 
         viewModel.editor.registerNodeType(CommonDialogueNode);
 
-        //register hotkeys
-        viewModel.commandHandler.registerHotkey(["Control", "Backspace"], "DELETE_NODES");
-
-        viewModel.commandHandler.registerCommand("OPEN_FILE", {
-            canExecute: () => true,
-            execute: (id) => {
-                importData();
-                viewModel.commandHandler.pressedKeys = [];
-            },
-        });
-
+        
         const OptionDialogueNode = BaklavaJS.Core.defineNode({
             type: "OptionDialogue",
             inputs: {
@@ -100,7 +92,18 @@
 
         viewModel.editor.registerNodeType(OptionDialogueNode);
 
+        //register hotkeys
+        viewModel.commandHandler.registerHotkey(["Control", "Backspace"], "DELETE_NODES");
+        viewModel.commandHandler.registerCommand("OPEN_FILE", {
+            canExecute: () => true,
+            execute: (id) => {
+                importData();
+                viewModel.commandHandler.pressedKeys = [];
+            },
+        });
         viewModel.commandHandler.registerHotkey(["Control", "o"], "OPEN_FILE");
+
+
 
         function addNodeWithCoordinates(nodeType, x, y) {
             const n = new nodeType();
