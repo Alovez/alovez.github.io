@@ -36,7 +36,9 @@
             if (event.ctrlKey && window.event.keyCode==79){	//禁用ctrl + s 功能
                 return false;
             }
-            console.log(event);
+            if (event.ctrlKey && window.event.keyCode==65){	//禁用ctrl + a 功能
+                return false;
+            }
         }
 
 
@@ -44,6 +46,8 @@
 
         const viewModel = BaklavaJS.createBaklava(document.getElementById("editor"));
 
+
+        // 定义节点
         const RoleNode = BaklavaJS.Core.defineNode({
             type: "Role",
             inputs: {
@@ -67,7 +71,7 @@
             type: "CommonDialogue",
             inputs: {
                 pre: () => new BaklavaJS.Core.NodeInterface("前置"),
-                action: () => new BaklavaJS.RendererVue.SelectInterface("action", "名称", ["BUYER", "ME", "BUY", "PAY", "DEPOSIT", "REFUSETOPLAY", "BUYERVICE", "FAKELEAVE"]).setPort(false),
+                action: () => new BaklavaJS.RendererVue.SelectInterface("action", "名称", ["BUYER", "ME", "BUY", "REFUSETOPLAY", "BUYERVICE", "FAKELEAVE", "SETTLEDEPOSIT"]).setPort(false),
                 content: () => new BaklavaJS.RendererVue.TextInputInterface("content", "内容").setPort(false),
             },
             outputs: {
@@ -76,6 +80,31 @@
         });
 
         viewModel.editor.registerNodeType(CommonDialogueNode);
+
+        const ParamDialogueNode = BaklavaJS.Core.defineNode({
+            type: "ParamDialogue",
+            inputs: {
+                pre: () => new BaklavaJS.Core.NodeInterface("前置"),
+                action: () => new BaklavaJS.RendererVue.SelectInterface("action", "名称", ["DEPOSIT", "PAY", "GIVEAWAY"]).setPort(false),
+                content: () => new BaklavaJS.RendererVue.TextInputInterface("content", "内容").setPort(false),
+                param: () => new BaklavaJS.RendererVue.TextInputInterface("param", "参数").setPort(false),
+            },
+            outputs: {
+                next: () => new BaklavaJS.RendererVue.TextInputInterface("Next", ""),
+            },
+        });
+
+        viewModel.editor.registerNodeType(ParamDialogueNode);
+
+        const EndDialogueNode = BaklavaJS.Core.defineNode({
+            type: "EndDialogue",
+            inputs: {
+                pre: () => new BaklavaJS.Core.NodeInterface("前置"),
+                endType: () => new BaklavaJS.RendererVue.SelectInterface("endType", "", ['END', "LEAVE", "QUIT"]).setPort(false),
+            },
+            outputs: {},
+        });
+
 
         
         const OptionDialogueNode = BaklavaJS.Core.defineNode({
@@ -92,6 +121,8 @@
 
         viewModel.editor.registerNodeType(OptionDialogueNode);
 
+
+
         //register hotkeys
         viewModel.commandHandler.registerHotkey(["Control", "Backspace"], "DELETE_NODES");
         viewModel.commandHandler.registerCommand("OPEN_FILE", {
@@ -102,6 +133,14 @@
             },
         });
         viewModel.commandHandler.registerHotkey(["Control", "o"], "OPEN_FILE");
+        viewModel.commandHandler.registerCommand("SELECT_ALL", {
+            canExecute: () => true,
+            execute: (id) => {
+                viewModel.displayedGraph.selectedNodes = viewModel.displayedGraph.nodes;
+                viewModel.commandHandler.pressedKeys = [];
+            },
+        });
+        viewModel.commandHandler.registerHotkey(["Control", "a"], "SELECT_ALL");
 
 
 
@@ -113,16 +152,109 @@
             return n;
         }
 
+        function createTemplateFromNode(node, connections, title) {
+            if (node.length > 0) {
+                let template = new BaklavaJS.Core.GraphTemplate(
+                    {
+                        name: title,
+                        connections: connections.map((c) => ({ id: c.id, from: c.from.id, to: c.to.id })),
+                        inputs: [],
+                        outputs: [],
+                        nodes: node.map((n) => n.save()),
+                    },
+                    editor,
+                );
+                viewModel.editor.addGraphTemplate(template);
+            } else {
+                console.log("No node selected");
+            }
+            
+        }
 
+        function clearEditor() {
+            viewModel.commandHandler.executeCommand("SELECT_ALL");
+            viewModel.commandHandler.executeCommand("DELETE_NODES");
+        }
+
+        function createTreeNode(id, data, x, y, nodes, connections){
+            if (['END', "LEAVE", "QUIT"].includes(id)){
+                let node = addNodeWithCoordinates(CommonDialogueNode, x, y);
+                return node;
+            }
+
+            if (nodes.hasOwnProperty(id)){
+                return nodes[id];
+            }
+            let node;
+            let nodeData = data[id]
+            if (nodeData === undefined){
+                console.log(id + " is undefined");
+                return null;
+            }
+            console.log(nodeData);
+            if (nodeData.ACTION === 'OPTION') {
+                node = addNodeWithCoordinates(OptionDialogueNode, x, y);
+                node.inputs.content.value = nodeData.CONTENT;
+                nodes[id] = node;
+                for (let i = 0; i < nodeData.OPTION.length; i++) {
+                    let option = nodeData.OPTION[i];
+                    let nextNode = createTreeNode(option, data, x + 250, y + i == 0?-300:300, nodes, connections);
+                    if (nextNode === null){
+                        continue;
+                    }
+                    let connection = viewModel.displayedGraph.addConnection(i == 0 ?node.outputs.Confirm:node.outputs.Refuse, nextNode.inputs.pre);
+                    connections.push(connection);
+                }
+            } else if (["DEPOSIT", "PAY", "GIVEAWAY"].includes(nodeData.ACTION)){
+                node = addNodeWithCoordinates(ParamDialogueNode, x, y);
+                node.inputs.action.value = nodeData.ACTION;
+                node.inputs.content.value = nodeData.CONTENT;
+                node.inputs.param.value = nodeData.PARAM;
+                nodes[id] = node;
+                let nextNode = createTreeNode(nodeData.NEXT, data, x + 250, y, nodes, connections);
+                if (nextNode === null){
+                    return null;
+                }
+                let connection = viewModel.displayedGraph.addConnection(node.outputs.next, nextNode.inputs.pre);
+                connections.push(connection);
+            } 
+            else {
+                node = addNodeWithCoordinates(CommonDialogueNode, x, y);
+                node.inputs.action.value = nodeData.ACTION;
+                node.inputs.content.value = nodeData.CONTENT;
+                nodes[id] = node;
+                let nextNode = createTreeNode(nodeData.NEXT, data, x + 250, y, nodes, connections);
+                if (nextNode === null){
+                    return null;
+                }
+                let connection = viewModel.displayedGraph.addConnection(node.outputs.next, nextNode.inputs.pre);
+                connections.push(connection);
+            }
+            return node;
+        }
+
+        function createDialogueTree(root, dialog, start_x, start_y) {
+            let data = JSON.parse(dialog);
+            let x = start_x;
+            let y = start_y;
+            let nodes = {};
+            let connections = [];
+            console.log(data);
+            let first = createTreeNode(0, data, x, y, nodes, connections);
+            let connection = viewModel.displayedGraph.addConnection(root.outputs.next, first.inputs.pre);
+            connections.push(connection);
+
+            console.log(nodes, connections);
+            let node_list = Object.values(nodes);
+            return {node_list, connections};
+        }
 
         function onReaderLoad(event) {
-            console.log(event.target.result);
             var obj = JSON.parse(event.target.result);
             console.log(obj);
             currentFile = obj;
             let x = 0;
             for (const key of Object.keys(currentFile)) {
-                console.log(currentFile[key].name);
                 let node = addNodeWithCoordinates(RoleNode, x, 0);
                 node.title = currentFile[key].name;
                 node.inputs.id.value = parseInt(key);
@@ -133,7 +265,10 @@
                 node.inputs.texture.value = currentFile[key].texture;
                 node.inputs.other_name.value = currentFile[key].other_name;
                 node.inputs.special_type.value = currentFile[key].special_type;
+                let dialogueTree = createDialogueTree(node, currentFile[key].dialog, x + 250, 0);
+                createTemplateFromNode([...dialogueTree.node_list, node], dialogueTree.connections, key + " - " + currentFile[key].name);
                 x += 250;
+                break;
             }
         }
 
@@ -143,7 +278,6 @@
             input.onchange = _ => {
                 // you can use this method to get file and perform respective operations
                 let file = input.files[0];
-                console.log(file);
                 var reader = new FileReader();
                 reader.onload = onReaderLoad;
                 reader.readAsText(file);
