@@ -318,7 +318,7 @@
                     let confirmConnection = connections.filter(connection => connection.from === node.outputs.Confirm.id);
                     let refuseConnection = connections.filter(connection => connection.from === node.outputs.Refuse.id);
 
-                    if (confirmConnection){
+                    if (confirmConnection.length > 0){
                         let confirmNode = nodes.filter(node => {
                             if (node.type == "Role"){
                                 return false
@@ -334,7 +334,7 @@
                         }
                     }
 
-                    if (refuseConnection){
+                    if (refuseConnection.length > 0){
                         let refuseNode = nodes.filter(node => {
                             if (node.type == "Role"){
                                 return false
@@ -352,7 +352,7 @@
                     }
                 } else if (node.type != "EndDialogue") {
                     let nextConnection = connections.filter(connection => connection.from === node.outputs.next.id);
-                    if (nextConnection){
+                    if (nextConnection.length > 0){
                         let nextNode = nodes.filter(node => {
                             if (node.type == "Role"){
                                 return false
