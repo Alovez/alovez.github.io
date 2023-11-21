@@ -36,14 +36,19 @@
             if (event.ctrlKey && window.event.keyCode==79){	//禁用ctrl + s 功能
                 return false;
             }
-            console.log(event);
+            if (event.ctrlKey && window.event.keyCode==65){	//禁用ctrl + a 功能
+                return false;
+            }
         }
 
 
         let currentFile = null;
+        let filename = "dialogue.json";
 
         const viewModel = BaklavaJS.createBaklava(document.getElementById("editor"));
 
+
+        // 定义节点
         const RoleNode = BaklavaJS.Core.defineNode({
             type: "Role",
             inputs: {
@@ -57,7 +62,7 @@
                 special_type: () => new BaklavaJS.RendererVue.TextInputInterface("special_type", "特殊类型").setPort(false),
             },
             outputs: {
-                next: () => new BaklavaJS.RendererVue.TextInputInterface("Next", ""),
+                next: () => new BaklavaJS.Core.NodeInterface("Next"),
             },
         });
 
@@ -67,21 +72,50 @@
             type: "CommonDialogue",
             inputs: {
                 pre: () => new BaklavaJS.Core.NodeInterface("前置"),
-                action: () => new BaklavaJS.RendererVue.SelectInterface("action", "名称", ["BUYER", "ME", "BUY", "PAY", "DEPOSIT", "REFUSETOPLAY", "BUYERVICE", "FAKELEAVE"]).setPort(false),
+                id: () => new BaklavaJS.RendererVue.IntegerInterface("id", 0).setPort(false),
+                action: () => new BaklavaJS.RendererVue.SelectInterface("action", "名称", ["BUYER", "ME", "BUY", "REFUSETOPLAY", "BUYERVICE", "FAKELEAVE", "SETTLEDEPOSIT"]).setPort(false),
                 content: () => new BaklavaJS.RendererVue.TextInputInterface("content", "内容").setPort(false),
             },
             outputs: {
-                next: () => new BaklavaJS.RendererVue.TextInputInterface("Next", ""),
+                next: () => new BaklavaJS.Core.NodeInterface("Next"),
             },
         });
 
         viewModel.editor.registerNodeType(CommonDialogueNode);
 
-        
+        const ParamDialogueNode = BaklavaJS.Core.defineNode({
+            type: "ParamDialogue",
+            inputs: {
+                pre: () => new BaklavaJS.Core.NodeInterface("前置"),
+                id: () => new BaklavaJS.RendererVue.IntegerInterface("id", 0).setPort(false),
+                action: () => new BaklavaJS.RendererVue.SelectInterface("action", "名称", ["DEPOSIT", "PAY", "GIVEAWAY"]).setPort(false),
+                content: () => new BaklavaJS.RendererVue.TextInputInterface("content", "内容").setPort(false),
+                param: () => new BaklavaJS.RendererVue.TextInputInterface("param", "参数").setPort(false),
+            },
+            outputs: {
+                next: () => new BaklavaJS.Core.NodeInterface("Next"),
+            },
+        });
+
+        viewModel.editor.registerNodeType(ParamDialogueNode);
+
+        const EndDialogueNode = BaklavaJS.Core.defineNode({
+            type: "EndDialogue",
+            inputs: {
+                pre: () => new BaklavaJS.Core.NodeInterface("前置"),
+                endType: () => new BaklavaJS.RendererVue.SelectInterface("endType", "", ['END', "LEAVE", "QUIT"]).setPort(false),
+            },
+            outputs: {},
+        });
+
+        viewModel.editor.registerNodeType(EndDialogueNode);
+
+
         const OptionDialogueNode = BaklavaJS.Core.defineNode({
             type: "OptionDialogue",
             inputs: {
                 pre: () => new BaklavaJS.Core.NodeInterface("前置"),
+                id: () => new BaklavaJS.RendererVue.IntegerInterface("id", 0).setPort(false),
                 content: () => new BaklavaJS.RendererVue.TextInputInterface("content", "内容").setPort(false),
             },
             outputs: {
@@ -92,7 +126,9 @@
 
         viewModel.editor.registerNodeType(OptionDialogueNode);
 
-        //register hotkeys
+
+
+        // 定义快捷键
         viewModel.commandHandler.registerHotkey(["Control", "Backspace"], "DELETE_NODES");
         viewModel.commandHandler.registerCommand("OPEN_FILE", {
             canExecute: () => true,
@@ -102,8 +138,33 @@
             },
         });
         viewModel.commandHandler.registerHotkey(["Control", "o"], "OPEN_FILE");
+        viewModel.commandHandler.registerCommand("SELECT_ALL", {
+            canExecute: () => true,
+            execute: (id) => {
+                viewModel.displayedGraph.selectedNodes = viewModel.displayedGraph.nodes;
+                viewModel.commandHandler.pressedKeys = [];
+            },
+        });
+        viewModel.commandHandler.registerHotkey(["Control", "a"], "SELECT_ALL");
 
+        viewModel.commandHandler.registerCommand("SAVE_FILE", {
+            canExecute: () => true,
+            execute: (id) => {
+                let save_data = {};
+                for (const template of viewModel.editor.graphTemplates) {
+                    let nodes = template.nodes;
+                    let connections = template.connections;
+                    let roleData = getDataFromGraph(nodes, connections);
+                    save_data[roleData.roleID] = roleData.roleJson;
+                }
+                saveAs(save_data);
+                viewModel.commandHandler.pressedKeys = [];
+            },
+        });
 
+        viewModel.commandHandler.registerHotkey(["Control", "s"], "SAVE_FILE");
+
+        // 功能方法
 
         function addNodeWithCoordinates(nodeType, x, y) {
             const n = new nodeType();
@@ -113,16 +174,216 @@
             return n;
         }
 
+        function createTemplateFromNode(node, connections, title) {
+            if (node.length > 0) {
+                let template = new BaklavaJS.Core.GraphTemplate(
+                    {
+                        name: title,
+                        connections: connections.map((c) => ({ id: c.id, from: c.from.id, to: c.to.id })),
+                        inputs: [],
+                        outputs: [],
+                        nodes: node.map((n) => n.save()),
+                    },
+                    editor,
+                );
+                viewModel.editor.addGraphTemplate(template);
+            } else {
+                console.log("No node selected");
+            }
+            
+        }
 
+        function clearEditor() {
+            while (viewModel.displayedGraph.nodes.length > 0){
+                for (const node of viewModel.displayedGraph.nodes) {
+                    viewModel.displayedGraph.removeNode(node);
+                }
+            }
+        }
+
+        function createTreeNode(id, data, x, y, nodes, connections){
+            if (['END', "LEAVE", "QUIT"].includes(id)){
+                let node = addNodeWithCoordinates(EndDialogueNode, x, y);
+                node.inputs.endType.value = id;
+                nodes[node.id] = node;
+                return node;
+            }
+
+            if (nodes.hasOwnProperty(id)){
+                return nodes[id];
+            }
+            let node;
+            let nodeData = data[id]
+            if (nodeData === undefined){
+                console.error(id + " is undefined");
+                return null;
+            }
+            if (nodeData.ACTION === 'OPTION') {
+                node = addNodeWithCoordinates(OptionDialogueNode, x, y);
+                node.inputs.id.value = parseInt(id);
+                node.inputs.content.value = nodeData.CONTENT;
+                nodes[id] = node;
+                for (let i = 0; i < nodeData.OPTION.length; i++) {
+                    let option = nodeData.OPTION[i];
+                    let nextNode = createTreeNode(option, data, x + 250, y + i == 0?-300:300, nodes, connections);
+                    if (nextNode === null){
+                        continue;
+                    }
+                    let connection = viewModel.displayedGraph.addConnection(i == 0 ?node.outputs.Confirm:node.outputs.Refuse, nextNode.inputs.pre);
+                    connections.push(connection);
+                }
+            } else if (["DEPOSIT", "PAY", "GIVEAWAY"].includes(nodeData.ACTION)){
+                node = addNodeWithCoordinates(ParamDialogueNode, x, y);
+                node.inputs.id.value = parseInt(id);
+                node.inputs.action.value = nodeData.ACTION;
+                node.inputs.content.value = nodeData.CONTENT;
+                node.inputs.param.value = nodeData.PARAM;
+                nodes[id] = node;
+                let nextNode = createTreeNode(nodeData.NEXT, data, x + 250, y, nodes, connections);
+                if (nextNode === null){
+                    return null;
+                }
+                let connection = viewModel.displayedGraph.addConnection(node.outputs.next, nextNode.inputs.pre);
+                connections.push(connection);
+            } 
+            else {
+                node = addNodeWithCoordinates(CommonDialogueNode, x, y);
+                node.inputs.id.value = parseInt(id);
+                node.inputs.action.value = nodeData.ACTION;
+                node.inputs.content.value = nodeData.CONTENT;
+                nodes[id] = node;
+                console.log(nodeData);
+                let nextNode = createTreeNode(nodeData.NEXT, data, x + 250, y, nodes, connections);
+                if (nextNode === null){
+                    return null;
+                }
+                let connection = viewModel.displayedGraph.addConnection(node.outputs.next, nextNode.inputs.pre);
+                connections.push(connection);
+            }
+            return node;
+        }
+
+        function createDialogueTree(root, dialog, start_x, start_y) {
+            let data = JSON.parse(dialog);
+            console.log(data);
+            let x = start_x;
+            let y = start_y;
+            let nodes = {};
+            let connections = [];
+            let first = createTreeNode(0, data, x, y, nodes, connections);
+            let connection = viewModel.displayedGraph.addConnection(root.outputs.next, first.inputs.pre);
+            connections.push(connection);
+            let node_list = Object.values(nodes);
+            return {node_list, connections};
+        }
+
+        function getDataFromGraph(nodes, connections) {
+            let dialogJson = {};
+            let roleID = 0;
+            let roleJson = {};
+
+            nodes.forEach(node => {
+                if (node.type == "Role"){
+                    roleID = parseInt(node.inputs.id.value);
+                    roleJson.name = node.inputs.name.value;
+                    roleJson.money = node.inputs.money.value;
+                    roleJson.prefer_price = node.inputs.perfer_price.value;
+                    roleJson.gender = node.inputs.gender.value == "男" ? 1: 0;
+                    roleJson.possibility_sub = 0;
+                    roleJson.texture = node.inputs.texture.value;
+                    roleJson.other_name = node.inputs.other_name.value;
+                    roleJson.special_type = node.inputs.special_type.value;
+                    return;
+                }
+                let jsonObject = {};
+                if (node.inputs.action){
+                    jsonObject.ACTION = node.inputs.action.value;
+                }
+
+                if (node.inputs.endType){
+                    jsonObject.ACTION = node.inputs.endType.value;
+                }
+
+                if (node.inputs.content){
+                    jsonObject.CONTENT = node.inputs.content.value;
+                }
+
+                if (node.inputs.param){
+                    jsonObject.PARAM = node.inputs.param.value;
+                }
+
+                if (node.type == "OptionDialogue") {
+                    jsonObject.ACTION = "OPTION";
+                    jsonObject.OPTION = [-1, -1];
+                    let confirmConnection = connections.filter(connection => connection.from === node.outputs.Confirm.id);
+                    let refuseConnection = connections.filter(connection => connection.from === node.outputs.Refuse.id);
+
+                    if (confirmConnection.length > 0){
+                        let confirmNode = nodes.filter(node => {
+                            if (node.type == "Role"){
+                                return false
+                            }
+                            return node.inputs.pre.id === confirmConnection[0].to
+                        });
+                        if (confirmNode.length > 0){
+                            if (confirmNode[0].type == "EndDialogue"){
+                                jsonObject.OPTION[0] = confirmNode[0].inputs.endType.value;
+                            } else {
+                                jsonObject.OPTION[0] = confirmNode[0].inputs.id.value;
+                            }
+                        }
+                    }
+
+                    if (refuseConnection.length > 0){
+                        let refuseNode = nodes.filter(node => {
+                            if (node.type == "Role"){
+                                return false
+                            }
+                            return node.inputs.pre.id === refuseConnection[0].to
+                        
+                        });
+                        if (refuseNode.length > 0){
+                            if (refuseNode[0].type == "EndDialogue"){
+                                jsonObject.OPTION[1] = refuseNode[0].inputs.endType.value;
+                            } else {
+                                jsonObject.OPTION[1] = refuseNode[0].inputs.id.value;
+                            }
+                        }
+                    }
+                } else if (node.type != "EndDialogue") {
+                    let nextConnection = connections.filter(connection => connection.from === node.outputs.next.id);
+                    if (nextConnection.length > 0){
+                        let nextNode = nodes.filter(node => {
+                            if (node.type == "Role"){
+                                return false
+                            }
+                            return node.inputs.pre.id === nextConnection[0].to
+                        });
+                        if (nextNode.length > 0){
+                            if (nextNode[0].type == "EndDialogue"){
+                                jsonObject.NEXT = nextNode[0].inputs.endType.value;
+                            } else {
+                                jsonObject.NEXT = nextNode[0].inputs.id.value;
+                            }
+                        }
+                    }
+                }
+
+                if (node.inputs.id){
+                    dialogJson[node.inputs.id.value] = jsonObject;
+                }
+            });
+            console.log(dialogJson);
+            roleJson.dialog = JSON.stringify(dialogJson);
+            return {roleID, roleJson};
+        }
 
         function onReaderLoad(event) {
-            console.log(event.target.result);
             var obj = JSON.parse(event.target.result);
             console.log(obj);
             currentFile = obj;
             let x = 0;
             for (const key of Object.keys(currentFile)) {
-                console.log(currentFile[key].name);
                 let node = addNodeWithCoordinates(RoleNode, x, 0);
                 node.title = currentFile[key].name;
                 node.inputs.id.value = parseInt(key);
@@ -133,8 +394,10 @@
                 node.inputs.texture.value = currentFile[key].texture;
                 node.inputs.other_name.value = currentFile[key].other_name;
                 node.inputs.special_type.value = currentFile[key].special_type;
-                x += 250;
+                let dialogueTree = createDialogueTree(node, currentFile[key].dialog, x + 250, 0);
+                createTemplateFromNode([...dialogueTree.node_list, node], dialogueTree.connections, key + " - " + currentFile[key].name);
             }
+            clearEditor();
         }
 
         function importData() {
@@ -143,7 +406,7 @@
             input.onchange = _ => {
                 // you can use this method to get file and perform respective operations
                 let file = input.files[0];
-                console.log(file);
+                filename = file.name;
                 var reader = new FileReader();
                 reader.onload = onReaderLoad;
                 reader.readAsText(file);
@@ -151,27 +414,41 @@
             input.click();
 
         }
-    </script>
 
-    <!-- <script>
-            (function(){
-    
-                function onChange(event) {
-                    var reader = new FileReader();
-                    reader.onload = onReaderLoad;
-                    reader.readAsText(event.target.files[0]);
-                }
-            
-                function onReaderLoad(event){
-                    console.log(event.target.result);
-                    var obj = JSON.parse(event.target.result);
-                    alert_data(obj);
-                }
-             
-                document.getElementById('file').addEventListener('change', onChange);
-            
-            }());
-        </script> -->
+        let fileHandle;
+        let autoSaveInterval;
+
+        async function saveAs(data) {
+            // Convert the data to JSON
+            var json = JSON.stringify(data);
+            // Create a new Blob object using the JSON data and the appropriate MIME type
+            var blob = new Blob([json], {type: "application/json"});
+        
+            // If there's no fileHandle, show the file picker
+            if (!fileHandle) {
+                fileHandle = await window.showSaveFilePicker({
+                    suggestedName: filename,
+                    types: [{
+                        description: 'JSON Files',
+                        accept: {
+                            'application/json': ['.json'],
+                        },
+                    }],
+                });
+
+                // Start auto-saving every 1 minute
+                autoSaveInterval = setInterval(() => {
+                    saveAs(data);
+                }, 60 * 1000); // 60 * 1000 milliseconds = 1 minute
+            }
+        
+            // Use the File System Access API to save the file
+            const writable = await fileHandle.createWritable();
+            await writable.write(blob);
+            await writable.close();
+        }
+
+    </script>
 </body>
 
 </html>
